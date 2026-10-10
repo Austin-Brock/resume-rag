@@ -1,0 +1,13 @@
+# Secrets — never commit
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# ChromaDB persistent store
+.chroma/
+
+# macOS
+.DS_Store
