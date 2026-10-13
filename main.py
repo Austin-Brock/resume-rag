@@ -38,6 +38,17 @@ experience or qualifications.
 Each context block is labelled with its source and page. When you use a fact, \
 cite it inline like (resume.pdf, page 1)."""
 
+# Used only by --no-rag. This deliberately drops the grounding instruction
+# above, because keeping it defeats the experiment: with no context block to
+# read, the grounded prompt just refuses, and a refusal looks nothing like the
+# failure RAG actually prevents. Without the guardrail the model has to fall
+# back on its own prior knowledge of a stranger's career -- which it does not
+# have -- so you see the invention directly. That contrast is the point.
+UNGROUNDED_SYSTEM_PROMPT = """You are an assistant answering questions about a \
+software engineer's professional experience.
+
+Answer the question as best you can."""
+
 
 # --- Stage 1: PDF -> text ---------------------------------------------------
 
@@ -150,21 +161,29 @@ def retrieve(openai_client: OpenAI, collection, question: str, k: int) -> list[d
 # --- Stage 5: generation ----------------------------------------------------
 
 def answer(openai_client: OpenAI, question: str, hits: list[dict]) -> str:
-    """Send the retrieved context plus the question to the LLM."""
+    """Send the retrieved context plus the question to the LLM.
+
+    No hits means retrieval was skipped (--no-rag), so the prompt switches
+    too. Swapping the context without swapping the instruction would compare
+    two different things at once.
+    """
     if hits:
         context = "\n\n".join(
             f"[{h['source']}, page {h['page']}]\n{h['text']}" for h in hits
         )
         user_content = f"Context:\n{context}\n\nQuestion: {question}"
+        system_prompt = SYSTEM_PROMPT
     else:
-        # The --no-rag experiment: no retrieval, so the model has only its
-        # own prior knowledge to draw on. Watch what it does with that.
+        # The --no-rag experiment: no retrieval and no grounding instruction,
+        # so the model has only its own prior knowledge to draw on. Watch
+        # what it does with that.
         user_content = f"Question: {question}"
+        system_prompt = UNGROUNDED_SYSTEM_PROMPT
 
     response = openai_client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
         temperature=0,
